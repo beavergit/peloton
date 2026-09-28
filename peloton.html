@@ -177,6 +177,32 @@
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  details.settings {
+    margin-top: 18px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+  }
+  details.settings summary {
+    cursor: pointer; padding: 12px 16px;
+    font-size: 13px; font-weight: 650; color: var(--muted);
+  }
+  .settings-body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .settings-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .settings-row label { font-size: 13px; color: var(--muted); flex: 1 1 320px; display: flex; gap: 8px; align-items: center; }
+  .settings-row input {
+    flex: 1; background: var(--bg); border: 1px solid var(--line);
+    color: var(--text); border-radius: 8px; padding: 10px 12px;
+    font-size: 13px; font-family: var(--mono); min-width: 0;
+  }
+  .live-pill {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.4px;
+    border: 1px solid var(--line); border-radius: 20px;
+    padding: 3px 10px; color: var(--muted); white-space: nowrap;
+  }
+  .live-pill.on { color: #7de08b; border-color: #2c5a33; }
+  .settings-note { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; }
+
   footer { padding: 14px 20px 22px; text-align: center; color: var(--muted); font-size: 12px; }
   footer a { color: var(--muted); }
 
@@ -237,6 +263,20 @@
   </div>
   <p class="hint">Shortcuts: <kbd>R</kbd> random video &nbsp;·&nbsp; <kbd>F</kbd> favorite current &nbsp;·&nbsp; History and favorites are saved on this device — Export backs them up to a file you can Import elsewhere.</p>
 
+  <details class="settings">
+    <summary>Settings — live YouTube search</summary>
+    <div class="settings-body">
+      <div class="settings-row">
+        <label>YouTube Data API key
+          <input id="yt-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste key to enable live search…">
+        </label>
+        <button class="btn-ghost" id="btn-key-clear" type="button">Clear</button>
+        <span class="live-pill" id="live-pill">Live search off</span>
+      </div>
+      <p class="settings-note">With a key, Random Video pulls a fresh embeddable walking tour straight from youtube.com instead of the built-in collection. Get one at Google Cloud Console → enable “YouTube Data API v3” → Credentials → Create API key (browser key; no OAuth needed). The key is stored only in this browser. Each Random press costs ~100 quota units — about 100 searches/day on the free default quota.</p>
+    </div>
+  </details>
+
   <section class="lists">
     <div class="tabs" role="tablist">
       <button id="tab-played" role="tab" aria-selected="true" type="button">Played<span class="count" id="count-played">0</span></button>
@@ -292,6 +332,15 @@ const BY_ID = new Map(CATALOG.map(v => [v.id, v]));
 const LS_PLAYED = "treadtours.played.v1";
 const LS_FAVS = "treadtours.favs.v1";
 const LS_CUSTOM = "treadtours.custom.v1";
+const LS_KEY = "treadtours.ytkey.v1";
+
+/* Rotated per press so live search returns fresh variety each time. */
+const LIVE_QUERIES = [
+  "walking tour 4k", "city walk 4k", "old town walking tour",
+  "national park trail hike 4k", "night walk city 4k", "coastal walk 4k",
+  "historic village walk", "treadmill walking scenery 4k"
+];
+const LIVE_ORDERS = ["relevance", "date", "rating", "viewCount"];
 
 function loadJSON(key, fallback) {
   try {
@@ -487,7 +536,69 @@ function extractVideoId(text) {
   return null;
 }
 
-$("btn-random").addEventListener("click", () => play(pickRandom().id));
+function apiKey() {
+  try { return (localStorage.getItem(LS_KEY) || "").trim(); } catch { return ""; }
+}
+
+function decodeHTML(s) {
+  const t = document.createElement("textarea");
+  t.innerHTML = s;
+  return t.value;
+}
+
+/* Live search youtube.com for a random embeddable walking video. One call
+   costs ~100 API quota units. Returns a registered catalog entry or null. */
+async function liveRandomVideo(key) {
+  const q = LIVE_QUERIES[Math.floor(Math.random() * LIVE_QUERIES.length)];
+  const order = LIVE_ORDERS[Math.floor(Math.random() * LIVE_ORDERS.length)];
+  const url = "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video"
+    + "&videoEmbeddable=true&videoDuration=long&maxResults=50&order=" + order
+    + "&q=" + encodeURIComponent(q) + "&key=" + encodeURIComponent(key);
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error((data.error && data.error.message) || ("HTTP " + res.status));
+  const items = (data.items || []).filter(it => it.id && it.id.videoId);
+  if (items.length === 0) return null;
+  const unseen = items.filter(it => !played.includes(it.id.videoId));
+  const src = unseen.length ? unseen : items;
+  const pick = src[Math.floor(Math.random() * src.length)];
+  const id = pick.id.videoId;
+  if (!BY_ID.has(id)) {
+    const snip = pick.snippet || {};
+    const entry = {
+      id,
+      title: decodeHTML(snip.title || ("YouTube walk (" + id + ")")),
+      place: decodeHTML(snip.channelTitle || "YouTube"),
+      tags: "youtube · live"
+    };
+    BY_ID.set(id, entry);
+    custom.push(entry);
+    saveJSON(LS_CUSTOM, custom);
+  }
+  return BY_ID.get(id);
+}
+
+async function onRandom() {
+  const key = apiKey();
+  if (!key) { play(pickRandom().id); return; }
+  const btn = $("btn-random");
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "Searching…";
+  try {
+    const v = await liveRandomVideo(key);
+    if (v) play(v.id);
+    else { toast("No fresh videos found — playing from collection."); play(pickRandom().id); }
+  } catch (err) {
+    toast("Live search failed (" + (err && err.message ? err.message : err) + ") — playing from collection.");
+    play(pickRandom().id);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+}
+
+$("btn-random").addEventListener("click", onRandom);
 $("btn-fav").addEventListener("click", () => toggleFav());
 $("btn-yt").addEventListener("click", () => {
   if (currentId) window.open(watchURL(currentId), "_blank", "noopener");
@@ -587,10 +698,31 @@ importInput.addEventListener("change", () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea")) return;
-  if (e.key === "r" || e.key === "R") play(pickRandom().id);
+  if (e.key === "r" || e.key === "R") onRandom();
   if (e.key === "f" || e.key === "F") toggleFav();
 });
 
+/* API key settings: persisted locally; live search is on when a key is set. */
+const keyInput = $("yt-key");
+const livePill = $("live-pill");
+function syncLivePill() {
+  const on = keyInput.value.trim().length > 0;
+  livePill.textContent = on ? "Live search ON" : "Live search off";
+  livePill.classList.toggle("on", on);
+}
+keyInput.value = apiKey();
+keyInput.addEventListener("change", () => {
+  try { localStorage.setItem(LS_KEY, keyInput.value.trim()); } catch {}
+  syncLivePill();
+  toast(keyInput.value.trim() ? "API key saved \u2014 Random Video now searches YouTube live." : "API key removed \u2014 using built-in collection.");
+});
+$("btn-key-clear").addEventListener("click", () => {
+  keyInput.value = "";
+  try { localStorage.removeItem(LS_KEY); } catch {}
+  syncLivePill();
+  toast("API key removed \u2014 using built-in collection.");
+});
+syncLivePill();
 render();
 </script>
 </body>
