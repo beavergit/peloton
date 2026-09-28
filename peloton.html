@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tread Tours — Walking Tour Player</title>
+<style>
+  :root {
+    --bg: #0c0d0e;
+    --panel: #151718;
+    --panel-2: #1c1f21;
+    --line: #2a2e30;
+    --text: #f2f3f3;
+    --muted: #a7adaf;
+    --accent: #e8321e;
+    --accent-dark: #b82314;
+    --star: #f5b50a;
+    --radius: 10px;
+    --font: "Avenir Next", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header.topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    background: #101112;
+    border-bottom: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark {
+    width: 30px; height: 30px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 800;
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+    letter-spacing: -1px;
+  }
+  .brand h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: 0.2px; }
+  .brand h1 small { display: block; font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0.6px; }
+  .session-stats {
+    display: flex; gap: 18px; margin-left: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+  }
+  .session-stats .stat { text-align: right; }
+  .session-stats .stat b { display: block; font-size: 16px; color: #fff; font-weight: 600; }
+  .session-stats .stat span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; font-family: var(--font); }
+
+  main { flex: 1; width: 100%; max-width: 1180px; margin: 0 auto; padding: 18px 20px 40px; }
+
+  .stage-wrap {
+    background: #000;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .stage { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .stage-empty {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px; text-align: center; padding: 24px;
+    background: radial-gradient(ellipse at 50% 120%, #232829 0%, #000 65%);
+  }
+  .stage-empty h2 { margin: 0; font-size: 26px; font-weight: 650; }
+  .stage-empty p { margin: 0; color: var(--muted); max-width: 460px; font-size: 14px; line-height: 1.5; }
+
+  .now-playing {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    flex-wrap: wrap;
+  }
+  .live-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+  .live-dot.idle { background: #4a4f51; }
+  .now-playing .meta { min-width: 0; flex: 1 1 240px; }
+  .now-playing .meta strong { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .now-playing .meta span { font-size: 12px; color: var(--muted); }
+  .chip {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.4px;
+    border: 1px solid var(--line); border-radius: 20px;
+    padding: 3px 10px; color: var(--muted); white-space: nowrap;
+  }
+
+  .controls { display: flex; gap: 10px; margin: 14px 0 6px; flex-wrap: wrap; align-items: center; }
+  button {
+    font-family: var(--font); font-size: 14px; font-weight: 650;
+    border-radius: 8px; border: 1px solid transparent;
+    padding: 11px 18px; cursor: pointer;
+  }
+  .btn-random { background: var(--accent); color: #fff; }
+  .btn-random:hover { background: var(--accent-dark); }
+  .btn-ghost { background: var(--panel-2); color: var(--text); border-color: var(--line); }
+  .btn-ghost:hover { border-color: #4a4f51; }
+  .btn-ghost[aria-pressed="true"] { border-color: var(--star); color: var(--star); }
+  .btn-ghost:disabled { opacity: 0.45; cursor: default; }
+  .add-url { display: flex; gap: 8px; margin-left: auto; flex: 1 1 280px; max-width: 420px; }
+  .add-url input {
+    flex: 1; background: var(--panel); border: 1px solid var(--line);
+    color: var(--text); border-radius: 8px; padding: 10px 12px; font-size: 13px;
+    min-width: 0;
+  }
+  .hint { font-size: 12px; color: var(--muted); margin: 8px 0 0; }
+  kbd {
+    font-family: var(--mono); font-size: 11px;
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+    padding: 1px 6px; background: var(--panel);
+  }
+  .play-help { margin-top: 6px; }
+  .link-btn {
+    background: none; border: 0; padding: 0;
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
+  }
+  .link-btn:hover { color: #fff; }
+
+  .lists { margin-top: 22px; }
+  .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+  .tabs button {
+    background: none; border: 0; border-radius: 0;
+    color: var(--muted); padding: 10px 14px; font-size: 14px;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tabs button[aria-selected="true"] { color: #fff; border-bottom-color: var(--accent); }
+  .tabs .count {
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 12px; padding: 1px 8px; margin-left: 6px;
+  }
+  .grid {
+    display: grid; gap: 14px; padding: 16px 0;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+  .tile {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); overflow: hidden; cursor: pointer;
+    transition: border-color 0.15s ease;
+  }
+  .tile:hover { border-color: #4a4f51; }
+  .tile.current { border-color: var(--accent); }
+  .tile .thumb { position: relative; aspect-ratio: 16 / 9; background: #000; }
+  .tile .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .tile .fav {
+    position: absolute; top: 8px; right: 8px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(0,0,0,0.65); border: 1px solid var(--line);
+    color: #cfd4d5; font-size: 15px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .tile .fav.on { color: var(--star); border-color: var(--star); }
+  .tile .playing-badge {
+    position: absolute; left: 8px; top: 8px;
+    font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
+    background: var(--accent); color: #fff; border-radius: 4px; padding: 3px 8px;
+  }
+  .tile .info { padding: 10px 12px 12px; }
+  .tile .info strong { display: block; font-size: 13px; line-height: 1.35; margin-bottom: 4px; }
+  .tile .info span { font-size: 12px; color: var(--muted); }
+  .empty-list { padding: 26px 6px; color: var(--muted); font-size: 14px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(20px);
+    background: #232627; border: 1px solid var(--line); color: var(--text);
+    font-size: 13px; padding: 10px 18px; border-radius: 8px;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease, transform 0.2s ease;
+    max-width: min(90vw, 520px); text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  footer { padding: 14px 20px 22px; text-align: center; color: var(--muted); font-size: 12px; }
+  footer a { color: var(--muted); }
+
+  @media (max-width: 640px) {
+    .session-stats { margin-left: 0; gap: 14px; }
+    main { padding: 12px 12px 30px; }
+    .stage-empty h2 { font-size: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tile, .toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">T</div>
+    <h1>Tread Tours<small>SCENIC WALKING TOURS FOR YOUR TREADMILL</small></h1>
+  </div>
+  <div class="session-stats" aria-label="Session stats">
+    <div class="stat"><b id="stat-time">0:00</b><span>walk time</span></div>
+    <div class="stat"><b id="stat-dist">0.00 mi</b><span>est. distance</span></div>
+    <div class="stat"><b id="stat-tours">0</b><span>tours played</span></div>
+  </div>
+</header>
+
+<main>
+  <div class="stage-wrap">
+    <div class="stage" id="stage">
+      <div class="stage-empty" id="stage-empty">
+        <h2>Ready for a walk?</h2>
+        <p>Hit <strong>Random Video</strong> to drop into a scenic walking tour — a historic old town, a national-park trail, or a far-off city street.</p>
+      </div>
+      <iframe id="player" title="Walking tour video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
+    </div>
+    <div class="now-playing">
+      <div class="live-dot idle" id="live-dot"></div>
+      <div class="meta">
+        <strong id="np-title">Nothing playing yet</strong>
+        <span id="np-sub">Press “Random Video” to start your first tour.</span>
+      </div>
+      <span class="chip" id="np-chip" hidden></span>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn-random" id="btn-random" type="button">Random Video</button>
+    <button class="btn-ghost" id="btn-fav" type="button" aria-pressed="false" disabled>☆ Favorite</button>
+    <button class="btn-ghost" id="btn-yt" type="button" disabled>Open on YouTube</button>
+    <form class="add-url" id="add-url-form">
+      <input id="add-url-input" type="text" inputmode="url" placeholder="Paste a YouTube URL to add it…" aria-label="Add a YouTube URL">
+      <button class="btn-ghost" type="submit">Add</button>
+    </form>
+  </div>
+  <p class="hint">Shortcuts: <kbd>R</kbd> random video &nbsp;·&nbsp; <kbd>F</kbd> favorite current &nbsp;·&nbsp; History and favorites are saved on this device.</p>
+  <p class="hint play-help">Video won't play or shows an error? <button class="link-btn" id="btn-host" type="button">Try the other player</button> · <button class="link-btn" id="btn-skip" type="button">Skip &amp; hide this video</button></p>
+
+  <section class="lists">
+    <div class="tabs" role="tablist">
+      <button id="tab-played" role="tab" aria-selected="true" type="button">Played<span class="count" id="count-played">0</span></button>
+      <button id="tab-favs" role="tab" aria-selected="false" type="button">Favorites<span class="count" id="count-favs">0</span></button>
+    </div>
+    <div class="grid" id="grid" role="tabpanel"></div>
+  </section>
+</main>
+
+<footer>
+  Videos stream from YouTube. Thumbnails via i.ytimg.com. Your lists never leave this browser.
+</footer>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+/* Curated pool of real walking-tour / trail videos (YouTube IDs verified via search). */
+const CATALOG = [
+  { id: "2BfHMnDOteA", title: "City Walking Tour", place: "Featured walk", tags: "city" },
+  { id: "LBgCjxggphA", title: "DUMBO to Manhattan Walk — Brooklyn Bridge", place: "New York City, USA", tags: "city" },
+  { id: "W4gZybvsPKw", title: "Downtown Dundas & Kensington Market", place: "Toronto, Canada", tags: "city" },
+  { id: "0xBW8AwVKcQ", title: "Canals, Dam Square & City Life", place: "Amsterdam, Netherlands", tags: "city" },
+  { id: "aVVNIkD8Lbw", title: "Night Walk — Damrak to Dam Square", place: "Amsterdam, Netherlands", tags: "city · night" },
+  { id: "8EMNuSkX8iI", title: "St Paul's Cathedral, Late Afternoon", place: "London, UK", tags: "city" },
+  { id: "ltioS-9v6-A",  title: "Paris Street Walk in Spring", place: "Paris, France", tags: "city" },
+  { id: "hsXSeosM1qg", title: "Raw Port City Energy", place: "Busan, South Korea", tags: "city" },
+  { id: "jDpheMKL2tw", title: "Hauptbahnhof to City Center", place: "Hagen, Germany", tags: "city" },
+  { id: "Af8InlrR3EM", title: "Exploring the City in Summer", place: "Ratingen, Germany", tags: "city" },
+  { id: "NGl4Pgtva4U", title: "Yeni Foça Beach & Seaside Walk", place: "Foça, Turkey", tags: "coast" },
+  { id: "-7yyu5SrL9g", title: "Colosseum, Trevi Fountain & Pantheon", place: "Rome, Italy", tags: "historic" },
+  { id: "-C6HiFp29sM", title: "Pantheon & Piazza Venezia", place: "Rome, Italy", tags: "historic" },
+  { id: "bhJU_fVHMmY", title: "Colosseum, Trevi & Vatican City", place: "Rome, Italy", tags: "historic" },
+  { id: "Tg8QWS5Cjuk", title: "Esquilino District Walk", place: "Rome, Italy", tags: "historic" },
+  { id: "FyYaSADHi4I", title: "Grand Canal & St Mark's Square", place: "Venice, Italy", tags: "historic" },
+  { id: "8YDu3fWF0tw", title: "Higashiyama District & Kiyomizu", place: "Kyoto, Japan", tags: "historic" },
+  { id: "JnYRfwwSD9A", title: "Heian Shrine & Garden", place: "Kyoto, Japan", tags: "historic" },
+  { id: "xyHBdFrKaMM", title: "Arashiyama Hozu River & Bridge", place: "Kyoto, Japan", tags: "historic" },
+  { id: "of4sCpEzcsM", title: "Traditional Streets & Temples", place: "Kyoto, Japan", tags: "historic" },
+  { id: "c9E4Cyh1O-0", title: "Emerald Lake Lakeside Trail", place: "Yoho National Park, Canada", tags: "trail · lake" },
+  { id: "Oxx4TzM0dkc", title: "Riverside Walk to The Narrows", place: "Zion National Park, USA", tags: "trail · canyon" },
+  { id: "TgsLph8ayBU", title: "Garfield Peak Trail Full Hike", place: "Crater Lake, USA", tags: "trail · summit" },
+  { id: "nd8_wgUzgq8", title: "Tokopah Falls Trail", place: "Sequoia National Park, USA", tags: "trail · waterfall" },
+  { id: "0hjS6V4KRTA", title: "General Grant Tree Trail", place: "Kings Canyon, USA", tags: "trail · forest" },
+  { id: "Jfo5cSm2jW4", title: "Cascade Canyon Trail", place: "Grand Teton, USA", tags: "trail · alpine" },
+  { id: "ThEvj9h8kJA", title: "Lakes & Waterfalls Walk (Trail H)", place: "Plitvice Lakes, Croatia", tags: "trail · waterfall" },
+  { id: "R1XS51JVRN0", title: "Viru Bog Boardwalk", place: "Lahemaa National Park, Estonia", tags: "trail · bog" },
+  { id: "Hp56VcJdr0U", title: "Cemetery Firetrail to Lookout", place: "Botany Bay, Australia", tags: "trail · coast" },
+  { id: "DvxQIQSUdeQ", title: "Trail 3 POV Hike", place: "Margalla Hills, Pakistan", tags: "trail" }
+];
+const BY_ID = new Map(CATALOG.map(v => [v.id, v]));
+
+const LS_PLAYED = "treadtours.played.v1";
+const LS_FAVS = "treadtours.favs.v1";
+const LS_CUSTOM = "treadtours.custom.v1";
+const LS_BLOCKED = "treadtours.blocked.v1";
+const LS_HOST = "treadtours.host.v1";
+
+/* youtube-nocookie first: it accepts embeds from null-origin (file://) pages
+   where the standard host answers Error 153. Either host can be flaky, so the
+   user can toggle with "Try the other player". */
+const EMBED_HOSTS = [
+  "https://www.youtube-nocookie.com/embed/",
+  "https://www.youtube.com/embed/"
+];
+
+function loadJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const val = JSON.parse(raw);
+    return Array.isArray(val) ? val : fallback;
+  } catch { return fallback; }
+}
+function saveJSON(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch {}
+}
+
+/* State */
+let played = loadJSON(LS_PLAYED, []);        /* most-recent-first, unique IDs */
+let favs = new Set(loadJSON(LS_FAVS, []));
+let custom = loadJSON(LS_CUSTOM, []);         /* user-added {id,title,place,tags} */
+let blocked = new Set(loadJSON(LS_BLOCKED, []));
+let hostIdx = 0;
+try { hostIdx = Number(localStorage.getItem(LS_HOST)) === 1 ? 1 : 0; } catch {}
+for (const v of custom) { if (v && v.id && !BY_ID.has(v.id)) BY_ID.set(v.id, v); }
+let currentId = null;
+let activeTab = "played";
+let walkStart = null;      /* timestamp current tour started */
+let sessionStart = null;   /* timestamp first tour started */
+
+const $ = (id) => document.getElementById(id);
+const player = $("player"), stageEmpty = $("stage-empty");
+
+function thumb(id) { return "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg"; }
+function watchURL(id) { return "https://www.youtube.com/watch?v=" + id; }
+
+let toastTimer = null;
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
+}
+
+function pool() {
+  return [...BY_ID.values()].filter(v => !blocked.has(v.id));
+}
+
+function embedURL(id) {
+  return EMBED_HOSTS[hostIdx] + id + "?autoplay=1&rel=0";
+}
+
+function pickRandom() {
+  const all = pool();
+  if (all.length === 0) { toast("Every video is hidden — add a URL to keep walking."); return null; }
+  const unseen = all.filter(v => !played.includes(v.id));
+  if (unseen.length > 0) return unseen[Math.floor(Math.random() * unseen.length)];
+  /* Everything seen: reshuffle from the full pool, avoiding immediate repeat. */
+  const others = all.filter(v => v.id !== currentId);
+  const src = others.length ? others : all;
+  toast("You've walked every tour — reshuffling the collection.");
+  return src[Math.floor(Math.random() * src.length)];
+}
+
+function play(id) {
+  const v = BY_ID.get(id);
+  if (!v) return;
+  currentId = id;
+  if (!sessionStart) sessionStart = Date.now();
+  walkStart = Date.now();
+
+  player.src = embedURL(id);
+  player.hidden = false;
+  stageEmpty.style.display = "none";
+
+  played = [id, ...played.filter(x => x !== id)];
+  saveJSON(LS_PLAYED, played);
+
+  $("live-dot").classList.remove("idle");
+  $("np-title").textContent = v.title;
+  $("np-sub").textContent = v.place + " · " + watchURL(id);
+  const chip = $("np-chip");
+  chip.hidden = false;
+  chip.textContent = v.tags || "walk";
+
+  $("btn-fav").disabled = false;
+  $("btn-yt").disabled = false;
+  syncFavButton();
+  render();
+}
+
+function syncFavButton() {
+  const btn = $("btn-fav");
+  const on = currentId && favs.has(currentId);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+  btn.textContent = on ? "★ Favorited" : "☆ Favorite";
+}
+
+function toggleFav(id) {
+  id = id || currentId;
+  if (!id || !BY_ID.has(id)) return;
+  if (favs.has(id)) { favs.delete(id); toast("Removed from favorites."); }
+  else { favs.add(id); toast("Saved to favorites."); }
+  saveJSON(LS_FAVS, [...favs]);
+  syncFavButton();
+  render();
+}
+
+function tileNode(v) {
+  const isCurrent = v.id === currentId;
+  const isFav = favs.has(v.id);
+  const el = document.createElement("article");
+  el.className = "tile" + (isCurrent ? " current" : "");
+  el.tabIndex = 0;
+  el.setAttribute("role", "button");
+  el.setAttribute("aria-label", "Play " + v.title);
+
+  const img = document.createElement("img");
+  img.src = thumb(v.id);
+  img.alt = "";
+  img.loading = "lazy";
+  const thumbWrap = document.createElement("div");
+  thumbWrap.className = "thumb";
+  thumbWrap.appendChild(img);
+
+  if (isCurrent) {
+    const badge = document.createElement("span");
+    badge.className = "playing-badge";
+    badge.textContent = "PLAYING";
+    thumbWrap.appendChild(badge);
+  }
+  const favBtn = document.createElement("button");
+  favBtn.className = "fav" + (isFav ? " on" : "");
+  favBtn.type = "button";
+  favBtn.textContent = isFav ? "★" : "☆";
+  favBtn.title = isFav ? "Remove from favorites" : "Add to favorites";
+  favBtn.setAttribute("aria-label", favBtn.title);
+  favBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleFav(v.id); });
+  thumbWrap.appendChild(favBtn);
+
+  const info = document.createElement("div");
+  info.className = "info";
+  const t = document.createElement("strong");
+  t.textContent = v.title;
+  const s = document.createElement("span");
+  s.textContent = v.place;
+  info.appendChild(t);
+  info.appendChild(s);
+
+  el.appendChild(thumbWrap);
+  el.appendChild(info);
+  el.addEventListener("click", () => play(v.id));
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); play(v.id); }
+  });
+  return el;
+}
+
+function render() {
+  $("count-played").textContent = played.length;
+  $("count-favs").textContent = favs.size;
+  $("tab-played").setAttribute("aria-selected", activeTab === "played" ? "true" : "false");
+  $("tab-favs").setAttribute("aria-selected", activeTab === "favs" ? "true" : "false");
+
+  const grid = $("grid");
+  grid.textContent = "";
+  const visible = (id) => BY_ID.has(id) && !blocked.has(id);
+  const ids = activeTab === "played" ? played.filter(visible) : [...favs].filter(visible);
+  if (ids.length === 0) {
+    const p = document.createElement("p");
+    p.className = "empty-list";
+    p.textContent = activeTab === "played"
+      ? "No tours yet — press “Random Video” to start walking."
+      : "No favorites yet — press ☆ Favorite while a tour you love is playing.";
+    grid.appendChild(p);
+    return;
+  }
+  for (const id of ids) {
+    const v = BY_ID.get(id);
+    if (v) grid.appendChild(tileNode(v));
+  }
+  $("stat-tours").textContent = played.length;
+}
+
+/* Session clock: walk time + estimated distance at a 3 mph stroll. */
+function fmtClock(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60), h = Math.floor(m / 60);
+  const mm = h > 0 ? String(m % 60).padStart(2, "0") : String(m);
+  return (h > 0 ? h + ":" : "") + mm + ":" + String(s % 60).padStart(2, "0");
+}
+setInterval(() => {
+  if (!sessionStart) return;
+  const el = Date.now() - sessionStart;
+  $("stat-time").textContent = fmtClock(el);
+  $("stat-dist").textContent = (el / 3600000 * 3).toFixed(2) + " mi";
+}, 1000);
+
+function extractVideoId(text) {
+  if (!text) return null;
+  text = text.trim();
+  const m = text.match(/(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/|live\/)|youtu\.be\/)([\w-]{6,})/);
+  if (m) return m[1].split(/[?&#]/)[0];
+  if (/^[\w-]{6,}$/.test(text)) return text;
+  return null;
+}
+
+function playRandom() {
+  const v = pickRandom();
+  if (v) play(v.id);
+}
+
+function skipAndHide() {
+  if (!currentId) { toast("Nothing is playing."); return; }
+  blocked.add(currentId);
+  saveJSON(LS_BLOCKED, [...blocked]);
+  toast("Hidden — won't be suggested again.");
+  playRandom();
+}
+
+function switchHost() {
+  hostIdx = 1 - hostIdx;
+  try { localStorage.setItem(LS_HOST, String(hostIdx)); } catch {}
+  if (currentId) {
+    player.src = embedURL(currentId);
+    toast(hostIdx === 0 ? "Switched to the privacy player." : "Switched to the standard player.");
+  } else {
+    toast("Player switched — press Random Video.");
+  }
+}
+
+$("btn-random").addEventListener("click", playRandom);
+$("btn-host").addEventListener("click", switchHost);
+$("btn-skip").addEventListener("click", skipAndHide);
+$("btn-fav").addEventListener("click", () => toggleFav());
+$("btn-yt").addEventListener("click", () => {
+  if (currentId) window.open(watchURL(currentId), "_blank", "noopener");
+});
+$("tab-played").addEventListener("click", () => { activeTab = "played"; render(); });
+$("tab-favs").addEventListener("click", () => { activeTab = "favs"; render(); });
+$("add-url-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = $("add-url-input");
+  const id = extractVideoId(input.value);
+  if (!id) { toast("Couldn't find a YouTube video ID in that."); return; }
+  if (!BY_ID.has(id)) {
+    const v = { id, title: "Community walk (" + id + ")", place: "Added by you", tags: "custom" };
+    BY_ID.set(id, v);
+    custom.push(v);
+    saveJSON(LS_CUSTOM, custom);
+  }
+  input.value = "";
+  if (blocked.has(id)) { blocked.delete(id); saveJSON(LS_BLOCKED, [...blocked]); }
+  play(id);
+  toast("Added to your collection and now playing.");
+});
+document.addEventListener("keydown", (e) => {
+  if (e.target.matches("input, textarea")) return;
+  if (e.key === "r" || e.key === "R") playRandom();
+  if (e.key === "f" || e.key === "F") toggleFav();
+});
+
+render();
+</script>
+</body>
+</html>
