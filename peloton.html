@@ -227,12 +227,15 @@
     <button class="btn-random" id="btn-random" type="button">Random Video</button>
     <button class="btn-ghost" id="btn-fav" type="button" aria-pressed="false" disabled>☆ Favorite</button>
     <button class="btn-ghost" id="btn-yt" type="button" disabled>Open on YouTube</button>
+    <button class="btn-ghost" id="btn-export" type="button">Export</button>
+    <button class="btn-ghost" id="btn-import" type="button">Import</button>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
     <form class="add-url" id="add-url-form">
       <input id="add-url-input" type="text" inputmode="url" placeholder="Paste a YouTube URL to add it…" aria-label="Add a YouTube URL">
       <button class="btn-ghost" type="submit">Add</button>
     </form>
   </div>
-  <p class="hint">Shortcuts: <kbd>R</kbd> random video &nbsp;·&nbsp; <kbd>F</kbd> favorite current &nbsp;·&nbsp; History and favorites are saved on this device.</p>
+  <p class="hint">Shortcuts: <kbd>R</kbd> random video &nbsp;·&nbsp; <kbd>F</kbd> favorite current &nbsp;·&nbsp; History and favorites are saved on this device — Export backs them up to a file you can Import elsewhere.</p>
 
   <section class="lists">
     <div class="tabs" role="tablist">
@@ -506,6 +509,82 @@ $("add-url-form").addEventListener("submit", (e) => {
   play(id);
   toast("Added to your collection and now playing.");
 });
+/* Export: download played + favorites (+ video metadata) as one JSON file. */
+function snapshot() {
+  const videos = {};
+  const collect = (id) => { const v = BY_ID.get(id); if (v) videos[id] = v; };
+  played.forEach(collect);
+  favs.forEach(collect);
+  return { app: "tread-tours", version: 1, exportedAt: new Date().toISOString(), played: [...played], favs: [...favs], videos };
+}
+
+function downloadFile(filename, text) {
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+$("btn-export").addEventListener("click", () => {
+  if (played.length === 0 && favs.size === 0) { toast("Nothing to export yet."); return; }
+  const d = new Date();
+  const stamp = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  downloadFile("tread-tours-" + stamp + ".json", JSON.stringify(snapshot(), null, 2));
+  toast("Exported " + played.length + " played, " + favs.size + " favorites.");
+});
+
+/* Import: merge an export file into this device's lists. */
+const importInput = $("import-file");
+$("btn-import").addEventListener("click", () => importInput.click());
+importInput.addEventListener("change", () => {
+  const file = importInput.files[0];
+  importInput.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("bad shape");
+      const vids = (data.videos && typeof data.videos === "object") ? data.videos : {};
+      const cleanIds = (arr) => Array.isArray(arr)
+        ? [...new Set(arr.filter(id => typeof id === "string" && /^[\w-]{6,}$/.test(id)))]
+        : [];
+      for (const [id, v] of Object.entries(vids)) {
+        if (!/^[\w-]{6,}$/.test(id)) continue;
+        if (!BY_ID.has(id) && v && typeof v.title === "string") {
+          const entry = {
+            id,
+            title: v.title,
+            place: typeof v.place === "string" ? v.place : "Imported walk",
+            tags: typeof v.tags === "string" ? v.tags : "imported"
+          };
+          BY_ID.set(id, entry);
+          custom.push(entry);
+        }
+      }
+      const impPlayed = cleanIds(data.played).filter(id => BY_ID.has(id));
+      const impFavs = cleanIds(data.favs).filter(id => BY_ID.has(id));
+      if (impPlayed.length === 0 && impFavs.length === 0) { toast("No walks found in that file."); return; }
+      played = [...new Set([...played, ...impPlayed])];
+      for (const id of impFavs) favs.add(id);
+      saveJSON(LS_PLAYED, played);
+      saveJSON(LS_FAVS, [...favs]);
+      saveJSON(LS_CUSTOM, custom);
+      syncFavButton();
+      render();
+      toast("Imported " + impPlayed.length + " played, " + impFavs.length + " favorites.");
+    } catch {
+      toast("Couldn't read that file — is it a Tread Tours export?");
+    }
+  };
+  reader.readAsText(file);
+});
+
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea")) return;
   if (e.key === "r" || e.key === "R") play(pickRandom().id);
