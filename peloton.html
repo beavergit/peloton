@@ -122,13 +122,6 @@
     border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
     padding: 1px 6px; background: var(--panel);
   }
-  .play-help { margin-top: 6px; }
-  .link-btn {
-    background: none; border: 0; padding: 0;
-    font-size: 12px; font-weight: 600; color: var(--muted);
-    text-decoration: underline; text-underline-offset: 2px; cursor: pointer;
-  }
-  .link-btn:hover { color: #fff; }
 
   .lists { margin-top: 22px; }
   .tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
@@ -218,7 +211,7 @@
         <h2>Ready for a walk?</h2>
         <p>Hit <strong>Random Video</strong> to drop into a scenic walking tour — a historic old town, a national-park trail, or a far-off city street.</p>
       </div>
-      <iframe id="player" title="Walking tour video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen referrerpolicy="strict-origin-when-cross-origin" hidden></iframe>
+      <iframe id="player" title="Walking tour video" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen hidden></iframe>
     </div>
     <div class="now-playing">
       <div class="live-dot idle" id="live-dot"></div>
@@ -240,7 +233,6 @@
     </form>
   </div>
   <p class="hint">Shortcuts: <kbd>R</kbd> random video &nbsp;·&nbsp; <kbd>F</kbd> favorite current &nbsp;·&nbsp; History and favorites are saved on this device.</p>
-  <p class="hint play-help">Video won't play or shows an error? <button class="link-btn" id="btn-host" type="button">Try the other player</button> · <button class="link-btn" id="btn-skip" type="button">Skip &amp; hide this video</button></p>
 
   <section class="lists">
     <div class="tabs" role="tablist">
@@ -297,16 +289,6 @@ const BY_ID = new Map(CATALOG.map(v => [v.id, v]));
 const LS_PLAYED = "treadtours.played.v1";
 const LS_FAVS = "treadtours.favs.v1";
 const LS_CUSTOM = "treadtours.custom.v1";
-const LS_BLOCKED = "treadtours.blocked.v1";
-const LS_HOST = "treadtours.host.v1";
-
-/* youtube-nocookie first: it accepts embeds from null-origin (file://) pages
-   where the standard host answers Error 153. Either host can be flaky, so the
-   user can toggle with "Try the other player". */
-const EMBED_HOSTS = [
-  "https://www.youtube-nocookie.com/embed/",
-  "https://www.youtube.com/embed/"
-];
 
 function loadJSON(key, fallback) {
   try {
@@ -324,9 +306,6 @@ function saveJSON(key, val) {
 let played = loadJSON(LS_PLAYED, []);        /* most-recent-first, unique IDs */
 let favs = new Set(loadJSON(LS_FAVS, []));
 let custom = loadJSON(LS_CUSTOM, []);         /* user-added {id,title,place,tags} */
-let blocked = new Set(loadJSON(LS_BLOCKED, []));
-let hostIdx = 0;
-try { hostIdx = Number(localStorage.getItem(LS_HOST)) === 1 ? 1 : 0; } catch {}
 for (const v of custom) { if (v && v.id && !BY_ID.has(v.id)) BY_ID.set(v.id, v); }
 let currentId = null;
 let activeTab = "played";
@@ -349,16 +328,11 @@ function toast(msg) {
 }
 
 function pool() {
-  return [...BY_ID.values()].filter(v => !blocked.has(v.id));
-}
-
-function embedURL(id) {
-  return EMBED_HOSTS[hostIdx] + id + "?autoplay=1&rel=0";
+  return [...BY_ID.values()];
 }
 
 function pickRandom() {
   const all = pool();
-  if (all.length === 0) { toast("Every video is hidden — add a URL to keep walking."); return null; }
   const unseen = all.filter(v => !played.includes(v.id));
   if (unseen.length > 0) return unseen[Math.floor(Math.random() * unseen.length)];
   /* Everything seen: reshuffle from the full pool, avoiding immediate repeat. */
@@ -375,7 +349,7 @@ function play(id) {
   if (!sessionStart) sessionStart = Date.now();
   walkStart = Date.now();
 
-  player.src = embedURL(id);
+  player.src = "https://www.youtube.com/embed/" + id + "?autoplay=1&rel=0";
   player.hidden = false;
   stageEmpty.style.display = "none";
 
@@ -470,8 +444,7 @@ function render() {
 
   const grid = $("grid");
   grid.textContent = "";
-  const visible = (id) => BY_ID.has(id) && !blocked.has(id);
-  const ids = activeTab === "played" ? played.filter(visible) : [...favs].filter(visible);
+  const ids = activeTab === "played" ? played : [...favs].filter(id => BY_ID.has(id));
   if (ids.length === 0) {
     const p = document.createElement("p");
     p.className = "empty-list";
@@ -511,33 +484,7 @@ function extractVideoId(text) {
   return null;
 }
 
-function playRandom() {
-  const v = pickRandom();
-  if (v) play(v.id);
-}
-
-function skipAndHide() {
-  if (!currentId) { toast("Nothing is playing."); return; }
-  blocked.add(currentId);
-  saveJSON(LS_BLOCKED, [...blocked]);
-  toast("Hidden — won't be suggested again.");
-  playRandom();
-}
-
-function switchHost() {
-  hostIdx = 1 - hostIdx;
-  try { localStorage.setItem(LS_HOST, String(hostIdx)); } catch {}
-  if (currentId) {
-    player.src = embedURL(currentId);
-    toast(hostIdx === 0 ? "Switched to the privacy player." : "Switched to the standard player.");
-  } else {
-    toast("Player switched — press Random Video.");
-  }
-}
-
-$("btn-random").addEventListener("click", playRandom);
-$("btn-host").addEventListener("click", switchHost);
-$("btn-skip").addEventListener("click", skipAndHide);
+$("btn-random").addEventListener("click", () => play(pickRandom().id));
 $("btn-fav").addEventListener("click", () => toggleFav());
 $("btn-yt").addEventListener("click", () => {
   if (currentId) window.open(watchURL(currentId), "_blank", "noopener");
@@ -556,13 +503,12 @@ $("add-url-form").addEventListener("submit", (e) => {
     saveJSON(LS_CUSTOM, custom);
   }
   input.value = "";
-  if (blocked.has(id)) { blocked.delete(id); saveJSON(LS_BLOCKED, [...blocked]); }
   play(id);
   toast("Added to your collection and now playing.");
 });
 document.addEventListener("keydown", (e) => {
   if (e.target.matches("input, textarea")) return;
-  if (e.key === "r" || e.key === "R") playRandom();
+  if (e.key === "r" || e.key === "R") play(pickRandom().id);
   if (e.key === "f" || e.key === "F") toggleFav();
 });
 
