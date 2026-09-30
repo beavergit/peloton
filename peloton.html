@@ -158,6 +158,15 @@
     line-height: 1;
   }
   .tile .fav.on { color: var(--star); border-color: var(--star); }
+  .tile .del {
+    position: absolute; bottom: 8px; right: 8px;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(0,0,0,0.65); border: 1px solid var(--line);
+    color: #cfd4d5; font-size: 16px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .tile .del:hover { color: #ff6b5e; border-color: #ff6b5e; }
   .tile .playing-badge {
     position: absolute; left: 8px; top: 8px;
     font-size: 10px; font-weight: 700; letter-spacing: 0.6px;
@@ -328,6 +337,7 @@ const CATALOG = [
   { id: "DvxQIQSUdeQ", title: "Trail 3 POV Hike", place: "Margalla Hills, Pakistan", tags: "trail" }
 ];
 const BY_ID = new Map(CATALOG.map(v => [v.id, v]));
+const BUILTIN_IDS = new Set(CATALOG.map(v => v.id));
 
 const LS_PLAYED = "treadtours.played.v1";
 const LS_FAVS = "treadtours.favs.v1";
@@ -438,6 +448,23 @@ function toggleFav(id) {
   render();
 }
 
+function deleteVideo(id) {
+  if (!id || !BY_ID.has(id)) return;
+  played = played.filter(x => x !== id);
+  favs.delete(id);
+  saveJSON(LS_PLAYED, played);
+  saveJSON(LS_FAVS, [...favs]);
+  /* Purge user-added metadata once the video is in neither list. */
+  if (!played.includes(id) && !favs.has(id)) {
+    const idx = custom.findIndex(v => v && v.id === id);
+    if (idx !== -1) { custom.splice(idx, 1); saveJSON(LS_CUSTOM, custom); }
+    if (!BUILTIN_IDS.has(id)) BY_ID.delete(id);
+  }
+  syncFavButton();
+  render();
+  toast("Deleted from played and favorites.");
+}
+
 function tileNode(v) {
   const isCurrent = v.id === currentId;
   const isFav = favs.has(v.id);
@@ -470,6 +497,15 @@ function tileNode(v) {
   favBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleFav(v.id); });
   thumbWrap.appendChild(favBtn);
 
+  const delBtn = document.createElement("button");
+  delBtn.className = "del";
+  delBtn.type = "button";
+  delBtn.textContent = "\u00d7";
+  delBtn.title = "Delete from played and favorites";
+  delBtn.setAttribute("aria-label", "Delete " + v.title);
+  delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteVideo(v.id); });
+  thumbWrap.appendChild(delBtn);
+
   const info = document.createElement("div");
   info.className = "info";
   const t = document.createElement("strong");
@@ -483,6 +519,7 @@ function tileNode(v) {
   el.appendChild(info);
   el.addEventListener("click", () => play(v.id));
   el.addEventListener("keydown", (e) => {
+    if (e.target !== el) return;
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); play(v.id); }
   });
   return el;
@@ -493,6 +530,7 @@ function render() {
   $("count-favs").textContent = favs.size;
   $("tab-played").setAttribute("aria-selected", activeTab === "played" ? "true" : "false");
   $("tab-favs").setAttribute("aria-selected", activeTab === "favs" ? "true" : "false");
+  $("stat-tours").textContent = played.length;
 
   const grid = $("grid");
   grid.textContent = "";
@@ -510,7 +548,6 @@ function render() {
     const v = BY_ID.get(id);
     if (v) grid.appendChild(tileNode(v));
   }
-  $("stat-tours").textContent = played.length;
 }
 
 /* Session clock: walk time + estimated distance at a 3 mph stroll. */
